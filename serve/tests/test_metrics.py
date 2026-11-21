@@ -196,8 +196,13 @@ class Http(unittest.TestCase):
         self.assertEqual(self.svc.waiting, {})
 
     def test_the_removed_endpoints_are_gone(self):
-        for path in ("/api/requests", "/api-monitor", "/settings", "/config", "/mcp"):
+        for path in ("/api/requests", "/api-monitor", "/config", "/mcp"):   # mab776: /settings is back (mode page)
             self.assertEqual(self.call(path)[0], 404, path)
+
+    def test_mab776_settings(self):
+        code, body = self.call("/settings")
+        self.assertEqual(code, 200)
+        self.assertIn("defaults", body)
 
     # --- /api/logs
     def test_logs(self):

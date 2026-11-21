@@ -21,7 +21,7 @@ def checked_return_progress(req: dict) -> bool:
 
 def openai_chunks(svc: Service, req: dict, ids, thinking, tools, max_new, cancel, force=None, session=None, live=None):
     cid, created = live.id if live else "chatcmpl-" + uuid.uuid4().hex[:24], int(time.time())
-    model = svc.model
+    model = getattr(svc.request_ctx, "model", None) or svc.model   # mab776: the -a id / an alias answers as itself
 
     want_lp = req.get(LOGPROBS_KEY) is not None
     # tokens' logprobs not yet sent with a chunk: the answer's (OpenAI's `content`), and Basalt's own

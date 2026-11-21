@@ -32,7 +32,7 @@ from serve.prompt import primed
 from serve.security import host_allowed, host_names_for, key_matches, origin_allowed, peer_of, remote_reason
 from serve.live import AnswerNowRefused
 from serve.router import Router
-from serve.service import LOG_FIRST_LINES, LOG_MAX_LINES, QUEUE_BEAT_S, Service, _debug_req
+from serve.service import LOG_FIRST_LINES, LOG_MAX_LINES, MAB776_ABLIT_MODEL, QUEUE_BEAT_S, Service, _debug_req
 from serve.api.structured import anthropic_format, check_format
 from serve.util.text import stop_strings
 
@@ -447,6 +447,9 @@ def make_handler(target: Service | Router):
                     shown = router.shown()
                     loaded = not hasattr(shown.engine, "alive") or shown.engine.alive()
                     self._json(200, shown.slot_table()[0] if loaded else [])
+            elif path == "/settings":                       # mab776: Strata's shared-settings read, for the mode page
+                if self._authorized():
+                    self._json(200, {"defaults": dict(router.shown().sampling_defaults)})
             elif path == "/v1/status":
                 if self._authorized():
                     self._json(200, {**router.shown().v1_status(), "models": router.models(), "swap": router.swap_status()})
@@ -489,6 +492,17 @@ def make_handler(target: Service | Router):
                 req = json.loads(self._body() or b"{}")
                 if not isinstance(req, dict):
                     raise ValueError("send a JSON object")
+                if path == "/settings":                      # mab776: the mode page's Normal/Abliterated, live
+                    if not self._authorized():
+                        return
+                    d = req.get("defaults") if isinstance(req.get("defaults"), dict) else req
+                    v = d.get("experimental_speed_projection")
+                    if not isinstance(v, bool):
+                        raise ValueError("defaults.experimental_speed_projection: true or false")
+                    for svc in router.services:              # every model entry, then the cache key follows per request
+                        svc.sampling_defaults["experimental_speed_projection"] = v
+                    self._json(200, {"defaults": dict(router.shown().sampling_defaults)})
+                    return
                 if path.startswith("/v1/responses/"):        # nothing is stored
                     self._json(404, responses_error_body("this server keeps no responses (stateless); send the "
                                                          "whole conversation to POST /v1/responses", code="not_found"))
@@ -601,6 +615,10 @@ def make_handler(target: Service | Router):
                 self.svc.request_ctx.path = path
                 self.svc.request_ctx.model = self.svc.model  # always the served name, never the requested one
                 self.svc.request_ctx.arrived = time.time()   # arrival timestamp for end-to-end / TTFT histograms
+                # mab776: the -a id turns the vector on; the -a id and the aliases answer under their own name
+                self.svc.request_ctx.ablit = bool(MAB776_ABLIT_MODEL) and requested == MAB776_ABLIT_MODEL
+                if requested in self.svc.mab776_ids():
+                    self.svc.request_ctx.model = requested
                 with document_sources(self._image_access()):   # a document by URL or path follows the image rules
                     if path == "/v1/responses":
                         self._responses(req)
