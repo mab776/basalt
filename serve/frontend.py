@@ -804,9 +804,42 @@ def _decode_param(value: str, schema) -> object:
     if text:
         return None if null and value.strip() == "null" else value
     try:
-        return json.loads(value)
+        return _unmangle_paths(value, json.loads(value))
     except ValueError:
         return value
+
+
+# mab776: a Windows path the model wrote quoted or in a list without escaping its backslashes ("c:\new\repos") is valid
+# JSON whose \n \r \t \b \f become control characters (seen from VS Code: grep paths mangled). When the decoded strings
+# hold a backspace or form feed, or control characters next to a drive path, the value is decoded again with every lone
+# backslash literal. Correctly escaped JSON ("c:\\new") decodes the same either way.
+_DRIVE_PATH = re.compile(r'(?<![\\])\b[A-Za-z]:\\(?![\\"])')
+_JSON_ESCAPE_OR_LONE = re.compile(r'\\(?:\\|"|/|u[0-9a-fA-F]{4})|\\')
+
+
+def _strings_of(v):
+    if isinstance(v, str):
+        yield v
+    elif isinstance(v, list):
+        for x in v:
+            yield from _strings_of(x)
+    elif isinstance(v, dict):
+        for x in v.values():
+            yield from _strings_of(x)
+
+
+def _unmangle_paths(raw: str, decoded):
+    if "\\" not in raw:
+        return decoded
+    strings = list(_strings_of(decoded))
+    if not (any(c in s for s in strings for c in "\x08\x0c")
+            or (_DRIVE_PATH.search(raw) and any(c in s for s in strings for c in "\n\r\t"))):
+        return decoded
+    literal = _JSON_ESCAPE_OR_LONE.sub(lambda m: m.group(0) if len(m.group(0)) > 1 else "\\\\", raw)
+    try:
+        return json.loads(literal)
+    except ValueError:
+        return decoded
 
 
 def _deref(root: dict, schema):
