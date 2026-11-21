@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import os
 import contextlib
 import ctypes
 import inspect
@@ -67,6 +68,12 @@ RATE_MIN_SPAN_S = 0.25      # below this span there is no rate yet: use the mean
 DEBUG = False            # --debug: one line per request plus the raw model text
 
 
+# mab776 (2026-11-20, port of our Strata patch): extra model ids. MAB776_ABLIT_MODEL = an id that always turns the
+# refusal vector on (experimental_speed_projection true); MAB776_ALIASES = comma-separated old ids that answer as the model.
+MAB776_ABLIT_MODEL = os.environ.get("MAB776_ABLIT_MODEL", "").strip()
+MAB776_ALIASES = [x.strip() for x in os.environ.get("MAB776_ALIASES", "").split(",") if x.strip()]
+
+
 class Service:
     loading = booting = False                      # a load or wake runs; the start-up load runs
     load_kind = "weights"                               # what the running load is: "weights" or "wake"
@@ -91,7 +98,11 @@ class Service:
         path = getattr(self.engine, "model_path", None)
         if isinstance(path, str) and path:
             names.append(path.replace("\\", "/").rsplit("/", 1)[-1])
-        return names
+        return names + self.mab776_ids()
+
+    def mab776_ids(self) -> list[str]:
+        """mab776: the extra ids /v1/models also lists (the always-abliterated one, then the aliases)."""
+        return [n for n in ([MAB776_ABLIT_MODEL] if MAB776_ABLIT_MODEL else []) + MAB776_ALIASES if n != self.model]
 
     def __init__(self, engine: Engine, tokenizer, template: ChatTemplate, model_name: str = "basalt",
                  vision: Vision | None = None, sampling_defaults: dict | None = None,
@@ -1168,6 +1179,8 @@ class Service:
         if self.sampling_defaults:     # the request's own fields win
             req_values = {k: v for k, v in (sampling or {}).items() if v is not None}
             sampling = {**self.sampling_defaults, **req_values}
+        if getattr(self.request_ctx, "ablit", False):    # mab776: the -a id always steers
+            sampling = {**(sampling or {}), "experimental_speed_projection": True}
         parser = self.dialect.parser(thinking, tools, stream_tools=True)
         detok, n, finish = Detokenizer(self.tok), 0, "length"
         lp_channels = LogprobChannels(thinking) if (sampling or {}).get(LOGPROBS_KEY) is not None else None

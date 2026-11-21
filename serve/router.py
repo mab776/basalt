@@ -78,6 +78,7 @@ class Router:
             if why and model["status"]["value"] == "unloaded":
                 model["status"] = {"value": "failed", "error": why}
             out.append(model)
+            out += [{**model, "id": n} for n in svc.mab776_ids()]   # mab776: the -a id and the aliases
         return out
 
     def swap_status(self) -> dict | None:
