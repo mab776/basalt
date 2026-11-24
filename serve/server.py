@@ -39,7 +39,7 @@ from serve.handler import Server, serve  # noqa: E402
 from serve.security import (LOOPBACK_NAMES, allowed_hosts_of, api_key_from_file, api_key_of,  # noqa: E402
                             exposed_without_key, lan_addresses, origins_of)
 from serve.router import Router  # noqa: E402
-from serve.service import Service  # noqa: E402
+from serve.service import MAB776_ABLIT_MODEL, Service  # noqa: E402
 from serve.engine.progress import load_progress                             # noqa: E402
 from serve.util.logbuf import ColorStream, LogBuffer, TeeStream, tail_file  # noqa: E402
 from serve.util.loglevel import ERR, WARN, LevelReader                     # noqa: E402
@@ -251,6 +251,8 @@ def build_model(a, cfg: dict, logs, multi: bool, known) -> Service:
         vision = None
         env = child_env(cfg)
         sampling_defaults = {**sampling_defaults_from_config(cfg), **a.sampling_launch}
+        if MAB776_ABLIT_MODEL:   # mab776: a request without the field is Normal from the start (the engine's own default is the vector ON)
+            sampling_defaults.setdefault("experimental_speed_projection", False)
         if a.lazy and not multi:
             drop_sidecar_vision(cfg)
         shown = [x for x in cfg["items"] if x not in cfg.get("shared_items", ())]
